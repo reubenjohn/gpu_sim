@@ -20,7 +20,7 @@ in BACKLOG.md.
 | # | Invariant | How it is checked |
 |---|---|---|
 | C1 | **GPU residency, no CPU syncs.** The env step (kinematics, collisions, rewards, resets) and the policy/update loop both run in VRAM. Inside the timed loop, host↔device copies ≤ `steps // 100_000` and host sync calls ≤ `steps // 100_000`: telemetry is packed into one device buffer and read back at most once per 10^5 steps. | `uv run gpu-sim bench -- <workload>`: `host_memcpys`, `host_syncs` |
-| C2 | **Fused launches.** The CPU only launches compiled loops that fuse thousands of steps (each launch is costly under WSL2): ≤ 100 host-side kernel/graph launches per 10,000 steps (provisional; set by the steps-fused-per-launch sweep in BACKLOG). | same, `launches_per_10k` |
+| C2 | **Fused launches.** The CPU only launches compiled loops that fuse thousands of steps (each launch is costly under WSL2): ≤ 100 host-side kernel/graph launches per 10,000 steps (provisional; set by the steps-fused-per-launch sweep table in DECISIONS). | same, `launches_per_10k` |
 | C3 | **VRAM.** Peak device memory used by the process (including the CUDA context and framework pools, not an allocator counter) < 7.0e9 bytes, leaving the rest of the 8 GB for WSL2/OS. | same, `peak_vram_bytes` |
 | C4 | **Hardware.** The NVIDIA GTX 1070 (Pascal SM 6.1, 8 GB, 1920 cores, ~256 GB/s) on WSL2. $0 cloud. | `nvidia-smi --query-gpu=name,compute_cap --format=csv` |
 | C5 | **FP32 and integers only.** No fp16/bf16 or autocast (Pascal runs FP16 at 1:64). fp32 for kinematics and weights; int32/int16/int8/uint8 for indices and discrete states. | code review; `grep -rniE "float16\|bfloat16\|autocast" src/` is empty |
@@ -54,22 +54,29 @@ measured values are in `DECISIONS.md`.
 | Stage 1 learning quality (proposed, owner to confirm) | trait matching (beak vs flower geometry) improves over generations versus a no-selection control run, and the GPU result matches a small CPU reference implementation | workload + pytest | GPU, local |
 | Stage 2 learning quality (proposed, owner to confirm) | the learned policy beats (a) a random policy and (b) a hand-coded fixed-timer traffic-light baseline on mean trip time and collisions, over fixed evaluation seeds | evaluation workload | GPU, local |
 | C1 to C3 | as above | `gpu-sim bench`, every run | GPU, local |
+| Stage 2 env (Phase 3 gate) | fixed shapes, no recompiles and no CPU fallbacks in the timed loop, branchless or masked kinematics, auto-reset | traffic workload + `gpu-sim bench` | GPU, local |
+| End-to-end RL (Phase 4 gate) | an FP32 policy fused with the env, reporting SPS and episodes/hour, meeting the Stage 2 targets | RL workload + `gpu-sim bench` | GPU, local |
 | Unit tests + lint | green | `uv run pytest -q && uv run ruff check . && uv run ruff format --check .` | CPU; local + CI |
 
 Exact learning-quality margins are set after the first runs, as backlog items.
+
+Sweeps (owner, 2026-11-14): throughput is not monotonic, so measure, don't assume. Required
+sweeps: batch size, and steps fused per launch (it sets C2's threshold). Once per framework:
+telemetry interval, memory layout, integer width, and threads per block (custom kernels only).
+Results: one small table per sweep in DECISIONS for the current framework(s) only; tables for
+rejected frameworks are deleted.
 
 Noise band (proposed): a throughput change smaller than ±5% across 3 runs is noise. Claim a
 speedup only from the median of 3 runs.
 
 ## Budgets
 
-- **Code volume** (`uv run pytest tests/test_code_volume.py`; table via
-  `uv run python scripts/code_volume.py`): AST nodes, with `CORE_BUDGET` for `src/gpu_sim/` and
-  the larger `TOTAL_BUDGET` for all project Python. The values are the constants in
-  `scripts/code_volume.py`, set by the owner and raised only at phase gates. Names, comments,
-  docstrings, type hints and imports are free. Never game it (golfing, packed lines, cryptic
-  names). When it binds, simplify, reuse a library, or ask the owner at the start of a session.
-  Never raise it mid-session.
+- **Code volume:** budgets 2500 core / 6000 total (owner, 2026-11-14), raised only at phase
+  gates by the owner; the constants live in `scripts/code_volume.py`. AST nodes: core is
+  `src/gpu_sim/`, total is all project Python. Check with `uv run pytest tests/test_code_volume.py`
+  (table: `uv run python scripts/code_volume.py`). Names, comments, docstrings, type hints and
+  imports are free. Never game it; when it binds, simplify, reuse a library, or ask the owner at
+  the start of a session.
 - **Money:** $0. No cloud GPUs and no paid services. Any spend needs the owner.
 - **Time:** unit suite < 30 s on CPU. A gate `bench` run ≤ 10 min wall (proposed). CI (CPU
   only) < 5 min.
@@ -102,6 +109,7 @@ evidence (C7).
 - change this brief or a settled principle
 - cut a requirement or lower a target
 - raise a code-volume budget
+- change an owner-gated decision in DECISIONS.md
 - spend any money
 - run `sudo` or install system packages (CUDA toolkit)
 - push to `main` on the public GitHub remote, or change repo settings or visibility
