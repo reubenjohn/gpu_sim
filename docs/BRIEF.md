@@ -106,6 +106,23 @@ Open design variables, decided by evidence in `DECISIONS.md` (all must avoid dyn
 hashing vs a lane graph as fixed adjacency tensors), the observation (kinematic feature vectors
 vs local occupancy grids, which must not need CNN rendering in VRAM), and the learner (neuroevolution with GA/CMA-ES vs PPO on the GPU).
 
+### Sweeps (owner, 2026-11-14)
+
+Throughput is not monotonic: a smaller batch can beat a larger one once state spills out of
+cache. Measure, don't assume. Each sweep runs once per framework on the GTX 1070, and its
+result goes into `DECISIONS.md` as a short table plus a one-line takeaway, so later agents
+reuse it instead of re-running it. Re-run a sweep only when the framework or memory layout changes.
+
+| Sweep | When | Notes |
+|---|---|---|
+| Batch size (population P, towns N) | required, Phase 2 and Phase 3 | find the peak and where it falls off; check C3 at the peak |
+| Steps fused per launch | required, Phase 1 (sets C2) and per framework | also watch compile time and VRAM |
+| Counter overhead | once, Phase 1 | the same workload's steps/hour with and without `gpu-sim bench` (CUPTI); expected ≈ 0 |
+| Telemetry interval | once per framework | 10^4 to 10^6 steps; C1 caps it at ≥ 10^5 |
+| Memory layout (array-of-structs vs struct-of-arrays) | once per framework | often 2–5× on Pascal |
+| Integer width (int32 / int16 / int8) for indices and states | once per framework | narrower saves bandwidth; some ops are slower |
+| Threads per block | custom kernels only | skip for JAX/PyTorch |
+
 ## 8. Autonomy boundary
 
 **Agents may, without asking:** do anything that moves a target without breaking a constraint
