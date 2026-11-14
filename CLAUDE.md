@@ -1,0 +1,60 @@
+# gpu_sim
+
+A 100% GPU-resident simulation and RL engine for a local GTX 1070 (Pascal SM 6.1, 8 GB, WSL2).
+
+## Read first
+
+- [docs/BRIEF.md](docs/BRIEF.md) is the north star: constraints, ranked requirements, targets,
+  budgets, settled decisions, the autonomy boundary and open owner questions. Decide from it.
+  Put anything you cannot decide in its §10 rather than guessing.
+- [DECISIONS.md](DECISIONS.md) is the append-only benchmark and decision log.
+
+## Commands (uv only: never pip or system python)
+
+- `uv sync`: install. `uv add <pkg>` / `uv add --dev <pkg>`: add a dependency.
+- `uv run pytest -q`: unit tests, including the code-volume gate. `@pytest.mark.gpu` tests skip without nsys.
+- `uv run ruff check . && uv run ruff format --check .`: lint and format (line length 120, C901 max complexity 10).
+- `uv run python scripts/code_volume.py`: per-file AST-node table against the budgets.
+- `uv run gpu-sim bench [--keep DIR] -- <workload cmd>`: profile a workload under nsys and gate
+  it on C1 to C3. The workload contract (cudaProfilerStart/Stop around the timed loop, plus a
+  `BENCH_RESULT {...}` stdout line) is in the docstring of `src/gpu_sim/bench.py`. It exits 1 on
+  a constraint failure.
+
+## Layout
+
+- `src/gpu_sim/`: core package. It counts toward `CORE_BUDGET`. `bench.py` is the Phase 1 harness.
+- `scripts/`: dev tooling. `tests/`: pytest. Both count toward `TOTAL_BUDGET` only.
+- `.github/workflows/ci.yml`: CPU-only CI (ruff, pytest). GPU gates run locally only.
+
+## Step-loop rules (hard constraints C1, C2, C5, C6; see BRIEF §2)
+
+1. **No dynamic shapes.** Never use `tensor[mask]`, growing lists, or host-side `if` on tensor
+   values inside the step loop. Use fixed padded tensors and `where(cond, new, old)`.
+2. **FP32 and integers only.** Never enable float16/bfloat16 or autocast; Pascal FP16 runs at
+   1:64. Use fp32 for kinematics and weights, int32/int16/int8/uint8 for indices and discrete states.
+3. **No host round-trips.** No host↔device copies or host syncs in the timed loop beyond one packed telemetry readback per
+   10^5 steps. Fuse thousands of steps into one XLA loop, CUDA Graph or megakernel, because
+   each kernel launch is expensive under WSL2.
+4. **Log every pivot.** Before proposing a framework or layout change, append the exact
+   `gpu-sim bench` numbers (median of 3 runs) to `DECISIONS.md`.
+5. **Toolchain.** CUDA 13 dropped Pascal. Use CUDA 12.x framework wheels and confirm SM 6.1
+   support before you adopt one.
+
+## Code volume (approximate complexity; do not game it)
+
+`tests/test_code_volume.py` caps AST nodes: `CORE_BUDGET` for `src/gpu_sim/`, and a much
+larger `TOTAL_BUDGET` for all project Python, tests included. Names, comments, docstrings, type
+hints and imports are free. The count is only a proxy for complexity, so never golf it with
+packed one-liners, cryptic names or dense tricks. When it binds:
+- simplify, or reuse a library or the tool's own reports instead of hand-rolling. For example,
+  use `nsys stats` CSV reports, not custom SQL over the nsys sqlite.
+- or ask the owner at the start of a session to raise the budget. Never raise it yourself.
+The budget is what lets agents work without the owner: under it, follow the BRIEF autonomy boundary.
+
+## Conventions
+
+- Verify against reality. A perf claim needs a `gpu-sim bench` run on the GTX 1070, and "CI is
+  green" needs `gh run view` showing green.
+- Promote any shell pipeline or inline script you would reuse to `scripts/` or a test.
+- The other ~1 GB of VRAM belongs to WSL2/OS (C3: peak < 7.0 GB).
+- Toolchain setup (CUDA toolkit, nsys) needs `sudo` and is done by the owner. Ask; never run it yourself.
