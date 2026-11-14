@@ -102,7 +102,8 @@ def nsys_report(rep: Path, report: str) -> str:
 
 def profile(command: list[str], out_dir: Path) -> Report:
     rep = out_dir / "profile"
-    nsys = ["nsys", "profile", "--capture-range=cudaProfilerApi", "--trace=cuda,nvtx", "--force-overwrite=true"]
+    nsys = ["nsys", "profile", "--capture-range=cudaProfilerApi", "--capture-range-end=stop"]  # default kills the app
+    nsys += ["--trace=cuda,nvtx", "--force-overwrite=true"]
     run = subprocess.run([*nsys, "-o", str(rep), *command], check=True, capture_output=True, text=True)
     result = parse_result(run.stdout)
     rep = rep.with_suffix(".nsys-rep")
