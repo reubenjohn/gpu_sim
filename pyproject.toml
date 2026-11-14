@@ -29,4 +29,4 @@ max-complexity = 10
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["gpu: needs the GTX 1070 and nsys; skipped when nsys is missing"]
+markers = ["gpu: needs the GTX 1070, nvcc and gcc (CUPTI counter); skipped when any is missing"]

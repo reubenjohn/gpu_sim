@@ -12,10 +12,10 @@ A 100% GPU-resident simulation and RL engine for a local GTX 1070 (Pascal SM 6.1
 ## Commands (uv only: never pip or system python)
 
 - `uv sync`: install. `uv add <pkg>` / `uv add --dev <pkg>`: add a dependency.
-- `uv run pytest -q`: unit tests, including the code-volume gate. `@pytest.mark.gpu` tests skip without nsys.
+- `uv run pytest -q`: unit tests, including the code-volume gate. `@pytest.mark.gpu` tests skip without the GPU, nvcc or gcc.
 - `uv run ruff check . && uv run ruff format --check .`: lint and format (line length 120, C901 max complexity 10).
 - `uv run python scripts/code_volume.py`: per-file AST-node table against the budgets.
-- `uv run gpu-sim bench [--keep DIR] -- <workload cmd>`: profile a workload under nsys and gate
+- `uv run gpu-sim bench [--keep DIR] -- <workload cmd>`: count a workload's CUDA driver calls with CUPTI and gate
   it on C1 to C3. The workload contract (cudaProfilerStart/Stop around the timed loop, plus a
   `BENCH_RESULT {...}` stdout line) is in the docstring of `src/gpu_sim/bench.py`. It exits 1 on
   a constraint failure.
@@ -47,7 +47,7 @@ larger `TOTAL_BUDGET` for all project Python, tests included. Names, comments, d
 hints and imports are free. The count is only a proxy for complexity, so never golf it with
 packed one-liners, cryptic names or dense tricks. When it binds:
 - simplify, or reuse a library or the tool's own reports instead of hand-rolling. For example,
-  use `nsys stats` CSV reports, not custom SQL over the nsys sqlite.
+  use CUPTI callbacks rather than hand-parsing profiler databases.
 - or ask the owner at the start of a session to raise the budget. Never raise it yourself.
 The budget is what lets agents work without the owner: under it, follow the BRIEF autonomy boundary.
 
@@ -57,4 +57,4 @@ The budget is what lets agents work without the owner: under it, follow the BRIE
   green" needs `gh run view` showing green.
 - Promote any shell pipeline or inline script you would reuse to `scripts/` or a test.
 - The other ~1 GB of VRAM belongs to WSL2/OS (C3: peak < 7.0 GB).
-- Toolchain setup (CUDA toolkit, nsys) needs `sudo` and is done by the owner. Ask; never run it yourself.
+- Toolchain setup (CUDA toolkit) needs `sudo` and is done by the owner. Ask; never run it yourself.

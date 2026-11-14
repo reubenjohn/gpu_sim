@@ -10,9 +10,9 @@ import ast
 import sys
 from pathlib import Path
 
-# (proposed 2026-11-14; owner sets these)
-CORE_BUDGET = 6000  # src/gpu_sim/**/*.py
-TOTAL_BUDGET = 20000  # all project Python: src/, scripts/, tests/, any other non-hidden dir
+# Set by the owner (2026-11-14); raised only at phase gates, by the owner.
+CORE_BUDGET = 2500  # src/gpu_sim/**/*.py
+TOTAL_BUDGET = 6000  # all project Python: src/, scripts/, tests/, any other non-hidden dir
 ROOT = Path(__file__).resolve().parent.parent
 ANNOTATIONS = {ast.arg: "annotation", ast.AnnAssign: "annotation"}
 ANNOTATIONS |= {ast.FunctionDef: "returns", ast.AsyncFunctionDef: "returns"}

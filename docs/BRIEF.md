@@ -16,7 +16,7 @@ constraints below, with agents that still learn.
 | # | Invariant | How it is checked |
 |---|---|---|
 | C1 | **GPU residency, no CPU syncs.** The env step (kinematics, collisions, rewards, resets) and the policy/update loop (mutation, or rollout + PPO/DQN update) both run in VRAM. Inside the timed loop, host↔device copies ≤ `steps // 100_000` and host sync calls (`cuda*/cu*Synchronize`) ≤ `steps // 100_000`, so telemetry is read back at most once per 10^5 steps. Pack telemetry into one device buffer: one readback = one D2H copy. | `uv run gpu-sim bench -- <workload>`: `host_memcpys`, `host_syncs` |
-| C2 | **Fused launches.** The CPU only launches a compiled megakernel, CUDA Graph or XLA loop, fusing thousands of steps per launch (WSL2/WDDM makes each launch costly): ≤ 100 host-side kernel/graph launches per 10,000 steps (proposed; see Q5). | same, `launches_per_10k` |
+| C2 | **Fused launches.** The CPU only launches a compiled megakernel, CUDA Graph or XLA loop, fusing thousands of steps per launch (WSL2/WDDM makes each launch costly): ≤ 100 host-side kernel/graph launches per 10,000 steps (provisional; set by the Phase 1 sweep, §7). | same, `launches_per_10k` |
 | C3 | **VRAM.** Peak device memory used (NVML, including the CUDA context and framework pools, not an allocator counter) < 7.0e9 bytes, leaving the rest of the 8 GB for WSL2/OS. JAX workloads set `XLA_PYTHON_CLIENT_PREALLOCATE=false`. | same, `peak_vram_bytes` |
 | C4 | **Hardware.** Targets the NVIDIA GTX 1070 (Pascal SM 6.1, 8 GB, 1920 cores, ~256 GB/s) on WSL2. $0 cloud. | `nvidia-smi --query-gpu=name,compute_cap --format=csv` |
 | C5 | **FP32 and integers only.** No fp16/bf16 or autocast (Pascal runs FP16 at 1:64). Use fp32 for kinematics and weights, int32/int16/int8/uint8 for indices and discrete states. | code review; `grep -rniE "float16\|bfloat16\|autocast" src/` is empty |
@@ -37,15 +37,18 @@ asserts they match this table, so change both together.
 
 ## 4. Targets
 
-A "step" is one batched step that advances every parallel env (or population) at once. For
-Stage 1, `steps` in `BENCH_RESULT` = generations.
+A "step" (`steps` in `BENCH_RESULT`) is one batched step that advances every parallel env (or
+the population) at once; C1 and C2 are counted per batched step. For Stage 1, `steps` =
+generations. Stage 2 workloads also report `env_steps`: env-steps summed across all towns
+(batched steps × N), which `gpu-sim bench` turns into `env_steps_per_hour`. The Stage 2 target
+is in summed env-steps; batched steps/hour is reported as a secondary, normalising metric.
 `steps_per_hour` comes from `gpu-sim bench`. Fill in "now" from `DECISIONS.md` (the latest
 entry per row).
 
 | Measure | Now | Target | Command | Run tier |
 |---|---|---|---|---|
-| Stage 1: hummingbird generations/hour (P = 10,000; see Q4) | not measured | ≥ 1,000,000 (~280 gen/s) | `uv run gpu-sim bench -- <stage-1 workload>` | GPU, local; 10^5–10^6 generations |
-| Stage 2: traffic env steps/hour across N parallel towns | not measured | ≥ 1,000,000 batched steps (proposed; see Q1) | same, traffic workload | GPU, local |
+| Stage 1: hummingbird generations/hour (one population, P = 10,000 total) | not measured | ≥ 1,000,000 (~280 gen/s) | `uv run gpu-sim bench -- <stage-1 workload>` | GPU, local; 10^5–10^6 generations |
+| Stage 2: traffic env-steps/hour summed across all N parallel towns (`env_steps_per_hour`) | not measured | ≥ 10^9 summed env-steps (~280k SPS); stretch (owner, 2026-11-14) | same, traffic workload | GPU, local |
 | Host memcpys / host syncs in the timed loop | n/a | ≤ steps // 100,000 each | same | each bench run |
 | Launches per 10k steps | n/a | ≤ 100 | same | each bench run |
 | Peak VRAM | n/a | < 7.0e9 bytes | same | each bench run |
@@ -59,10 +62,11 @@ speedup only from the median of 3 runs.
 - **Code volume** (`uv run pytest tests/test_code_volume.py`, table via
   `uv run python scripts/code_volume.py`): counts AST nodes. Names, comments, docstrings, type
   hints and imports are free. Two budgets: `CORE_BUDGET` covers `src/gpu_sim/`, and the much larger
-  `TOTAL_BUDGET` covers all project Python, tests included. Both are set by the owner (proposed
-  values in the script). Code volume only approximates complexity, so never game it (golfing,
+  `TOTAL_BUDGET` covers all project Python, tests included. Both are set by the owner (values in the script:
+  `CORE_BUDGET` = 2500, `TOTAL_BUDGET` = 6000, owner, 2026-11-14). They start small for constant
+  back-pressure and are raised only at phase gates, by the owner. Code volume only approximates complexity, so never game it (golfing,
   packed lines, cryptic names). When it binds, simplify, reuse a library instead of hand-rolling
-  (e.g. use `nsys stats` reports rather than hand-written SQL over the nsys sqlite), or ask the
+  (e.g. use CUPTI callbacks rather than hand-parsing profiler databases), or ask the
   owner at the start of a session to raise it. Never raise it mid-session.
 - **Money:** $0. No cloud GPUs and no paid services. Spend of any amount needs the owner.
 - **Time:** unit suite < 30 s on CPU. A gate `bench` run ≤ 10 min wall (proposed). CI (CPU only)
@@ -75,17 +79,18 @@ Full rationale and the benchmark log: [`DECISIONS.md`](../DECISIONS.md).
 - D1. Local GTX 1070 on WSL2 is the only target; $0 cloud. Why: owner hardware and cost.
 - D2. FP32 and integer arithmetic only (C5). Why: Pascal FP16 runs at 1:64.
 - D3. Fixed-shape, branchless or masked step functions (C6). Why: dynamic shapes break fusion and force recompiles.
-- D4. The profiling gate runs nsys with `--capture-range=cudaProfilerApi` and reads the `nsys stats` CSV reports. Why: nsys does the counting, so no hand-rolled sqlite. The workload contract is in `src/gpu_sim/bench.py`.
+- D4. The profiling gate injects a CUPTI driver-API callback counter (`src/gpu_sim/cucount.c`, via `CUDA_INJECTION64_PATH`) that counts calls by name between cudaProfilerStart and cudaProfilerStop. Why: nsys records no CUDA data on WSL2 + Pascal; CUPTI driver-API callbacks do. The workload contract is in `src/gpu_sim/bench.py`.
 - D5. Python 3.12 managed by uv (`uv run`, `uv add`). No pip and no system Python.
-- D6. GPU gates run locally. GitHub CI is CPU-only (lint, unit tests, code volume); `@pytest.mark.gpu` tests skip without nsys.
+- D6. GPU gates run locally. GitHub CI is CPU-only (lint, unit tests, code volume); `@pytest.mark.gpu` tests skip without the GPU, nvcc or gcc.
 - D7. **The framework is NOT settled.** JAX, PyTorch (CUDA Graphs) and custom kernels (Warp/Taichi/Triton/CUDA) are hypotheses. The Phase 2 shootout picks one, with evidence in `DECISIONS.md` (C7). Hybrids (custom env kernels + a JAX/PyTorch policy) are valid candidates. A candidate with no working SM 6.1 build is dropped from the shootout, and the failed check is logged in `DECISIONS.md`. No owner needed.
-- D8. GPU frameworks must ship CUDA 12.x builds that support SM 6.1. CUDA 13 dropped Pascal. Check SM 6.1 support for any wheel before adopting it. Do not upgrade the Windows driver past the R580 branch, the last to support Pascal (the installed driver is 581.29).
+- D8. GPU frameworks must ship CUDA 12.x builds that support SM 6.1. CUDA 13 dropped Pascal. Check SM 6.1 support for any wheel before adopting it. PyTorch: pin `torch==2.7.1` from the cu126 index; the latest wheel lacks sm_6x kernels ("no kernel image"). Do not upgrade the Windows driver past the R580 branch, the last to support Pascal (the installed driver is 581.29).
 
 ## 7. Roadmap (gates, in order)
 
 1. **Phase 1, profiling harness**: `gpu-sim bench` reports host memcpys, launches per 10k steps,
    steps/hour and peak VRAM, and gates on C1 to C3. Done when it runs end to end on the GTX 1070
-   against a trivial fused workload.
+   against a trivial fused workload. One-time sweep: steps fused per launch vs steps/hour on the
+   GTX 1070; record the curve concisely in DECISIONS.md and set C2's threshold from it.
 2. **Phase 2, hummingbird co-evolution shootout**: a vectorized loop (P = 10,000; beak morphology
    vs flower geometry) in JAX, PyTorch with CUDA Graphs, and one custom-kernel backend. Each runs
    10^5 to 10^6 generations back to back in VRAM. Gate: ≥ 10^6 gen/hour with C1 to C3 passing.
@@ -113,7 +118,7 @@ when `DECISIONS.md` holds the bench evidence (C7).
 - cut a requirement or lower a target
 - raise a code-volume budget
 - spend any money
-- run `sudo` or install system packages (CUDA toolkit, nsys)
+- run `sudo` or install system packages (CUDA toolkit)
 - push to `main` on the public GitHub remote, or change repo settings or visibility
 - delete untracked data
 
@@ -129,14 +134,4 @@ when `DECISIONS.md` holds the bench evidence (C7).
 
 Agents add questions here instead of guessing.
 
-- Q1. Stage 2 target unit: does ≥ 10^6 per hour count batched steps (each advancing all N towns),
-  or env-steps summed over towns? Summed env-steps would be trivial at large N. What is the
-  minimum N? (Proposed: batched steps, N ≥ 1024.)
-- Q2. Code-volume budgets: confirm or replace the proposed `CORE_BUDGET` and `TOTAL_BUDGET`.
 - Q3. Learning-quality bar for Phase 4: what reward or behaviour counts as "learns"? (Undecided.)
-- Q4. Stage 1 population: is P = 10,000 the total, or per population? If per population, how
-  many populations? (The source said "thousands of parallel populations"; 10^7 individuals may
-  pressure C3.)
-- Q5. C2 threshold: the source asked for O(1) launches per 10^4 steps. Keep ≤ 100 (one launch
-  per 100 steps), or tighten it to ≤ 10? Risk to check: an XLA `lax.scan` may launch kernels
-  every iteration unless command buffers are enabled, which could decide the JAX result alone.

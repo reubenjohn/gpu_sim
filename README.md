@@ -10,7 +10,7 @@ hour, with no host↔device traffic in the loop.
 ```sh
 uv sync
 uv run pytest -q
-uv run gpu-sim bench -- <workload command>   # needs nsys and the GPU
+uv run gpu-sim bench -- <workload command>   # needs the GPU, gcc and CUPTI
 ```
 
 The `bench` workload contract is in the docstring of `src/gpu_sim/bench.py`.
@@ -18,7 +18,8 @@ The `bench` workload contract is in the docstring of `src/gpu_sim/bench.py`.
 ## Requirements
 
 - An NVIDIA driver with WSL2 GPU support (`nvidia-smi` works)
-- Nsight Systems (`nsys`) on `PATH`, for `gpu-sim bench`
+- CUDA 12.x toolkit with CUPTI (default `/usr/local/cuda`, override with `CUDA_HOME`) and `gcc`,
+  for `gpu-sim bench` (it builds its CUPTI counter on first use into `~/.cache/gpu_sim/`)
 - [uv](https://docs.astral.sh/uv/)
 
 ## Docs

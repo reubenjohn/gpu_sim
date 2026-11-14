@@ -1,3 +1,5 @@
+import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -6,33 +8,6 @@ import pytest
 
 import gpu_sim
 from gpu_sim import bench
-
-PREAMBLE = (
-    "Generating SQLite file /tmp/profile.sqlite from /tmp/profile.nsys-rep\n"
-    "Processing [/tmp/profile.sqlite] with [/opt/nvidia/nsys/reports/{report}.py]... \n"
-)
-MEM_HEADER = '"Total (MB)","Count","Avg (MB)","Med (MB)","Min (MB)","Max (MB)","StdDev (MB)","Operation"\n'
-MEM_ROWS = (
-    '"4.194","3","1.398","1.398","1.398","1.398","0.000","[CUDA memcpy Host-to-Device]"\n'
-    '"0.004","2","0.002","0.002","0.002","0.002","0.000","[CUDA memcpy Device-to-Host]"\n'
-    '"800.000","50","16.000","16.000","16.000","16.000","0.000","[CUDA memcpy Device-to-Device]"\n'
-    '"64.000","7","9.143","8.000","8.000","16.000","3.024","[CUDA memset]"\n'
-)
-API_HEADER = (
-    '"Time (%)","Total Time (ns)","Num Calls","Avg (ns)","Med (ns)","Min (ns)","Max (ns)","StdDev (ns)","Name"\n'
-)
-API_ROWS = (
-    '"60.0","6000","10","600.0","600.0","500","700","50.0","cudaLaunchKernel"\n'
-    '"20.0","2000","4","500.0","500.0","500","500","0.0","cuLaunchKernel"\n'
-    '"15.0","1500","5","300.0","300.0","300","300","0.0","cudaGraphLaunch_v10000"\n'
-    '"5.0","500","100","5.0","5.0","5","5","0.0","cudaMemcpyAsync"\n'
-)
-
-
-def nsys_output(header: str, body: str, report: str, quoted: bool = True) -> str:
-    """What `nsys stats --format csv --output -` prints: preamble lines, then the table."""
-    table = header + body
-    return PREAMBLE.format(report=report) + (table if quoted else table.replace('"', ""))
 
 
 def test_parse_result_last_line_wins():
@@ -45,20 +20,47 @@ def test_parse_result_missing_line_raises():
         bench.parse_result("no result here\n")
 
 
-@pytest.mark.parametrize("quoted", [True, False], ids=["quoted", "unquoted"])
-def test_count_host_memcpys_ignores_device_to_device_and_memset(quoted):
-    assert bench.count_host_memcpys(nsys_output(MEM_HEADER, MEM_ROWS, "cuda_gpu_mem_size_sum", quoted)) == 5
+# Real CUPTI counter output for tests/fixtures/probe.cu (1000 launches, 3 H2D, 2 D2H, 4 syncs).
+PROBE_COUNTS = {
+    "cuModuleGetFunction": 1,
+    "cuStreamSynchronize": 4,
+    "cuMemcpyHtoDAsync_v2": 3,
+    "cuMemcpyDtoHAsync_v2": 2,
+    "cuLaunchKernel": 1000,
+    "cuProfilerStart": 1,
+    "cuCtxPushCurrent_v2": 1,
+    "cuCtxPopCurrent_v2": 1,
+    "cuLibraryLoadData": 1,
+    "cuLibraryGetModule": 1,
+}
 
 
-@pytest.mark.parametrize("quoted", [True, False], ids=["quoted", "unquoted"])
-def test_count_launches_strips_version_suffix_and_skips_non_launch_apis(quoted):
-    assert bench.count_api_calls(nsys_output(API_HEADER, API_ROWS, "cuda_api_sum", quoted), bench.LAUNCH_APIS) == 19
+def test_classify_probe_counts():
+    assert bench.classify(PROBE_COUNTS) == {"launches": 1000, "host_memcpys": 5, "host_syncs": 4}
 
 
-def test_counts_are_zero_when_nsys_skips_the_report():
-    skipped = "SKIPPED: /tmp/profile.sqlite does not contain CUDA trace data.\n"
-    assert bench.count_host_memcpys(skipped) == 0
-    assert bench.count_api_calls(skipped, bench.LAUNCH_APIS) == 0
+def test_classify_launch_variants_and_suffixes():
+    counts = {"cuLaunchKernelEx": 2, "cuLaunchCooperativeKernel_ptsz": 3, "cuGraphLaunch": 5, "cuLaunchHostFunc": 7}
+    assert bench.classify(counts)["launches"] == 10
+
+
+def test_classify_host_copies_skip_device_to_device_and_memset():
+    counts = {"cuMemcpyHtoA_v2": 1, "cuMemcpyAtoH_v2": 1, "cuMemcpyDtoD_v2": 50, "cuMemsetD32Async": 9}
+    assert bench.classify(counts)["host_memcpys"] == 2
+
+
+def test_classify_counts_direction_unknown_copies_as_host():
+    assert bench.classify({"cuMemcpy": 1, "cuMemcpyAsync_ptsz": 2, "cuMemcpyPeer": 4})["host_memcpys"] == 3
+
+
+def test_classify_syncs_ignore_event_record_and_stream_wait():
+    counts = {"cuCtxSynchronize": 1, "cuEventSynchronize": 2, "cuStreamSynchronize_ptsz": 3, "cuEventRecord": 208}
+    counts |= {"cuStreamWaitEvent": 107}
+    assert bench.classify(counts)["host_syncs"] == 6
+
+
+def test_classify_empty_counts_is_all_zero():
+    assert bench.classify({}) == {"launches": 0, "host_memcpys": 0, "host_syncs": 0}
 
 
 def report(**overrides) -> bench.Report:
@@ -79,6 +81,11 @@ def test_report_passes_and_derives_rates():
     assert r.steps_per_hour == 360_000_000
     assert r.launches_per_10k == pytest.approx(0.01)
     assert r.summary()["failures"] == []
+    assert r.summary()["env_steps_per_hour"] == 0
+
+
+def test_summary_reports_summed_env_steps_per_hour():
+    assert report(env_steps=1_000_000_000).summary()["env_steps_per_hour"] == 360_000_000_000
 
 
 @pytest.mark.parametrize(
@@ -114,11 +121,25 @@ def test_bench_without_command_errors(capsys):
     assert "workload command" in capsys.readouterr().err
 
 
+NVCC = shutil.which("nvcc") or str(bench.CUDA_HOME / "bin/nvcc")
+HAS_GPU = (
+    shutil.which("nvidia-smi") is not None and subprocess.run(["nvidia-smi", "-L"], capture_output=True).returncode == 0
+)
+
+
 @pytest.mark.gpu
-@pytest.mark.skipif(shutil.which("nsys") is None, reason="nsys not installed")
-def test_nsys_available():
-    """Placeholder for the end-to-end bench run until a reference workload exists."""
-    assert subprocess.run(["nsys", "--version"], check=True, capture_output=True, text=True).stdout
+@pytest.mark.skipif(
+    not (pathlib.Path(NVCC).exists() and shutil.which("gcc") and HAS_GPU), reason="needs nvcc, gcc, GPU"
+)
+def test_bench_end_to_end_on_probe(tmp_path, capsys):
+    probe = tmp_path / "probe"
+    source = pathlib.Path(__file__).parent / "fixtures/probe.cu"
+    env = os.environ | {"NVCC_CCBIN": os.environ.get("NVCC_CCBIN", "g++-14")}
+    subprocess.run([NVCC, "-arch=sm_61", "-o", str(probe), str(source)], check=True, env=env)
+    assert bench.main(["--keep", str(tmp_path), "--", str(probe)]) == 1  # 1000 launches/1000 steps fails C2
+    summary = json.loads(capsys.readouterr().out)
+    assert (summary["launches"], summary["host_memcpys"], summary["host_syncs"]) == (1000, 5, 4)
+    assert (tmp_path / "counts.json").exists()
 
 
 def test_report_fails_when_capture_range_never_fired():
@@ -128,11 +149,6 @@ def test_report_fails_when_capture_range_never_fired():
 def test_report_fails_on_host_syncs_beyond_telemetry_allowance():
     assert report(steps=1_000_000, host_syncs=10).failures() == []
     assert "host syncs 11 > 10" in report(steps=1_000_000, host_syncs=11).failures()
-
-
-def test_count_api_calls_counts_syncs():
-    csv_text = '"Num Calls","Name"\n"7","cudaStreamSynchronize"\n"2","cuCtxSynchronize_v2000"\n"5","cudaLaunchKernel"\n'
-    assert bench.count_api_calls(csv_text, bench.SYNC_APIS) == 9
 
 
 def test_thresholds_match_brief():
