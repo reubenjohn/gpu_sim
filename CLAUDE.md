@@ -4,10 +4,14 @@ A 100% GPU-resident simulation and RL engine for a local GTX 1070 (Pascal SM 6.1
 
 ## Read first
 
-- [docs/BRIEF.md](docs/BRIEF.md) is the north star: constraints, ranked requirements, targets,
-  budgets, settled decisions, the autonomy boundary and open owner questions. Decide from it.
-  Put anything you cannot decide in its §10 rather than guessing.
-- [DECISIONS.md](DECISIONS.md) is the append-only benchmark and decision log.
+1. [docs/BRIEF.md](docs/BRIEF.md) is the north star: constraints, ranked requirements, targets,
+   budgets, the autonomy boundary and open owner questions. Decide from it. Put anything you
+   cannot decide in its "Open owner questions" rather than guessing.
+2. [docs/BACKLOG.md](docs/BACKLOG.md): pick the top unblocked item.
+3. [DECISIONS.md](DECISIONS.md): current technical decisions with their evidence, sweep results
+   and rejected options.
+
+Only the orchestrating agent edits BACKLOG.md; subagents report items upward.
 
 ## Commands (uv only: never pip or system python)
 
@@ -26,7 +30,7 @@ A 100% GPU-resident simulation and RL engine for a local GTX 1070 (Pascal SM 6.1
 - `scripts/`: dev tooling. `tests/`: pytest. Both count toward `TOTAL_BUDGET` only.
 - `.github/workflows/ci.yml`: CPU-only CI (ruff, pytest). GPU gates run locally only.
 
-## Step-loop rules (hard constraints C1, C2, C5, C6; see BRIEF §2)
+## Step-loop rules (hard constraints C1, C2, C5, C6; see BRIEF "Hard constraints")
 
 1. **No dynamic shapes.** Never use `tensor[mask]`, growing lists, or host-side `if` on tensor
    values inside the step loop. Use fixed padded tensors and `where(cond, new, old)`.
@@ -35,10 +39,10 @@ A 100% GPU-resident simulation and RL engine for a local GTX 1070 (Pascal SM 6.1
 3. **No host round-trips.** No host↔device copies or host syncs in the timed loop beyond one packed telemetry readback per
    10^5 steps. Fuse thousands of steps into one XLA loop, CUDA Graph or megakernel, because
    each kernel launch is expensive under WSL2.
-4. **Log every pivot.** Before proposing a framework or layout change, append the exact
-   `gpu-sim bench` numbers (median of 3 runs) to `DECISIONS.md`.
+4. **Log every pivot.** Before proposing a framework or layout change, record its `gpu-sim bench`
+   numbers (median of 3) as the evidence for that decision in DECISIONS.md.
 5. **Toolchain.** CUDA 13 dropped Pascal. Use CUDA 12.x framework wheels and confirm SM 6.1
-   support before you adopt one.
+   support before you adopt one (DECISIONS T5 to T7).
 
 ## Code volume (approximate complexity; do not game it)
 

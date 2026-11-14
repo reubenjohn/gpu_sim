@@ -1,70 +1,64 @@
-# Decisions and benchmark log
+# Decisions
 
-Append-only. Every framework or memory-layout experiment gets an entry with its exact
-`uv run gpu-sim bench` output (BRIEF C7) **before** an architectural change is proposed.
-Settled decisions are summarised in [docs/BRIEF.md](docs/BRIEF.md) §6.
+The current technical decisions, with their evidence. Goals, constraints and owner-level
+principles are in [docs/BRIEF.md](docs/BRIEF.md); work is in [docs/BACKLOG.md](docs/BACKLOG.md).
 
-Entry template:
+Rules:
+1. This file holds only CURRENT decisions: ID | decision | why (one line) | evidence (latest
+   numbers + date, or a link to a committed results file). It is not dated log entries.
+2. When a decision changes, edit it in place. Delete superseded decisions; git history keeps them.
+3. Sweep results: one small table per sweep, overwritten when re-run, plus a one-line takeaway.
+4. Rejected options get a short "Rejected" list, one line each ("X: rejected because Y, date"),
+   so agents don't retry them. That is the only history kept visible.
+5. Known gaps or debt belong in BACKLOG.md, not here.
 
-```
-## YYYY-MM-DD: <experiment or decision>
-Commit: <sha>  Workload: <command>  Runs: 3 (median reported)
-steps_per_hour | host_memcpys | launches_per_10k | peak_vram_bytes
-Verdict: <adopt / reject / inconclusive> because <one line>
-```
+Before proposing a framework or layout change, record its `gpu-sim bench` numbers (median of 3)
+as the evidence for that decision here (BRIEF C7). Evidence format:
+`steps_per_hour | host_memcpys | host_syncs | launches_per_10k | peak_vram_bytes`, plus commit and workload.
 
-## 2026-11-14: project bootstrap
-- Profiling gate (D4): nsys `--capture-range=cudaProfilerApi`, counts read from the `nsys stats`
-  CSV reports `cuda_gpu_mem_size_sum` and `cuda_api_sum`. Rejected: hand-written SQL over the
-  `--export=sqlite` DB, because nsys already computes these totals and SQL would add code volume.
-- Framework candidates for Phase 2, all unproven on SM 6.1:
-  1. JAX (`jit` + `vmap` + `lax.scan`). Pros: PureJaxRL-style, so env + policy + update can
-     fuse into one XLA loop. Risk: XLA behaviour and shared-memory spills on Pascal as traffic
-     branching grows.
-  2. PyTorch (`torch.compile` + `torch.cuda.CUDAGraph`, optionally TorchRL). Pros: graph replay has near-zero
-     dispatch cost on WSL2. Risk: graph breaks on resets and neighbour lookups.
-  3. Custom kernels (Warp / Taichi / Triton / CUDA C++). Pros: spatial hashing, raycasts and
-     graph kinematics map naturally to SIMT without padding. Risk: autodiff and NN integration.
-- Toolchain constraint (D8): CUDA 13 dropped Pascal, so use CUDA 12.x framework builds and
-  verify SM 6.1 kernels are present before adopting a wheel.
-- Open follow-ups (from bootstrap review):
-  - [Superseded by the 2026-11-14 CUPTI counter entry: nsys dropped.] nsys CSV format (quoting, preamble) is unverified because nsys is not installed yet. When it
-    lands, run `gpu-sim bench` on a trivial fused workload, save one real `cuda_api_sum` and one
-    `cuda_gpu_mem_size_sum` CSV under `tests/fixtures/`, and replace the `@pytest.mark.gpu`
-    placeholder with that end-to-end run (Phase 1 done-criterion).
-  - Risk for JAX: an XLA `lax.scan`/while loop may launch kernels from the host every iteration
-    unless command buffers are enabled. Measure `launches_per_10k` early (BRIEF Q5).
-  - [Superseded by the 2026-11-14 CUPTI counter entry.] Host-to-Host and peer copies are not counted as host copies; a SKIPPED nsys report (no
-    memory ops) counts as 0, which is correct for the ideal case. Zero launches fails the gate.
+## Settled technical decisions
 
-## 2026-11-14: profiling gate moves from nsys to a CUPTI driver-API counter (D4)
-- Evidence: nsys on this WSL2 + GTX 1070 records no CUDA data at all, so the nsys path was blind
-  (every report empty, so the gate could only fail on zero launches).
-- Replacement: `src/gpu_sim/cucount.c`, a CUPTI callback-API subscriber injected via
-  `CUDA_INJECTION64_PATH`. It counts every driver-API call by name between cuProfilerStart and
-  cuProfilerStop and writes `{name: count}` JSON at exit; `bench.py` builds it with gcc into
-  `~/.cache/gpu_sim/` and classifies names into launches / host memcpys / host syncs.
-- Probe results inside the capture range:
-  - raw CUDA (`tests/fixtures/probe.cu`): 1000 launches, 3 H2D, 2 D2H, 4 syncs, all exact.
-  - JAX: 101 `cuLaunchKernel`, 1 H2D, 1 D2H.
-  - torch 2.7.1+cu126: 200 launches, 1 H2D, 1 D2H, syncs counted (2 `cuStreamSynchronize`,
-    1 `cuCtxSynchronize`).
-- `gpu-sim bench -- probe`: launches 1000, host_memcpys 5, host_syncs 4 (now the
-  `@pytest.mark.gpu` end-to-end test).
-- Known gap: XLA waits through `cuEventRecord` / `cuLaunchHostFunc` / `cuStreamWaitEvent`
-  rather than `cu*Synchronize`, so `host_syncs` reads 0 for JAX. Its D2H readbacks are still
-  counted as `host_memcpys`, which covers the C1 intent for telemetry readbacks.
-- Generic `cuMemcpy`/`cuMemcpyAsync` (direction unknown under unified addressing) count as host
-  copies, to be safe.
-- Toolchain (D8): the latest torch wheel lacks sm_6x kernels ("no kernel image"), so pin
-  `torch==2.7.1` from the cu126 index.
-Verdict: adopt, because it gives exact counts for raw CUDA, JAX and PyTorch where nsys gives none.
+| ID | Decision | Why | Evidence |
+|---|---|---|---|
+| T1 | The bench gate injects a CUPTI driver-API callback counter (`src/gpu_sim/cucount.c`, via `CUDA_INJECTION64_PATH`) that counts driver calls by name between cuProfilerStart and cuProfilerStop and writes `{name: count}` JSON at exit. `bench.py` builds it with gcc into `~/.cache/gpu_sim/` and classifies names into launches, host memcpys and host syncs. | Exact counts for raw CUDA, JAX and PyTorch where nsys gives none. | 2026-11-14, inside the capture range: raw CUDA `tests/fixtures/probe.cu` 1000 launches, 3 H2D, 2 D2H, 4 syncs (all exact; now the `@pytest.mark.gpu` end-to-end test); JAX 101 `cuLaunchKernel`, 1 H2D, 1 D2H; torch 2.7.1+cu126 200 launches, 1 H2D, 1 D2H, 2 `cuStreamSynchronize` + 1 `cuCtxSynchronize`. |
+| T2 | Generic `cuMemcpy`/`cuMemcpyAsync` count as host copies; a run with zero launches fails the gate. | Direction is unknown under unified addressing: a false alarm beats a missed round-trip. Zero launches means the capture range was missed. | `tests/test_bench.py` |
+| T3 | Peak VRAM is read from NVML (whole process: CUDA context and framework pools), not an allocator counter. JAX workloads set `XLA_PYTHON_CLIENT_PREALLOCATE=false`. | Allocator counters miss the context and pools, and JAX preallocation would fake a 75% peak. | contract in `src/gpu_sim/bench.py` |
+| T4 | Python 3.12 managed by uv (`uv run`, `uv add`); no pip, no system Python. | One reproducible toolchain for agents and CI. | `pyproject.toml`, `uv.lock` |
+| T5 | GPU frameworks must ship CUDA 12.x builds with SM 6.1 kernels; check before adopting any wheel. | CUDA 13 dropped Pascal. | see Rejected |
+| T6 | PyTorch is pinned to `torch==2.7.1` from the cu126 index. | The latest wheel lacks sm_6x kernels ("no kernel image"). | 2026-11-14 probe (T1) |
+| T7 | Keep the Windows driver on the R580 branch (installed: 581.29). | R580 is the last branch supporting Pascal. | `nvidia-smi` |
+| T8 | GitHub CI is CPU-only (ruff, pytest, code volume); `@pytest.mark.gpu` tests skip without the GPU, nvcc or gcc. | No GPU runners at $0 (BRIEF principle). | `.github/workflows/ci.yml` |
+| T9 | C6 recompiles are counted with `jax.log_compiles` or the `torch._dynamo` recompile counter inside the timed loop. | The frameworks already expose them. | none yet |
+| T10 | **The framework is NOT settled.** JAX (`jit` + `vmap` + `lax.scan`), PyTorch (`torch.compile` + `torch.cuda.CUDAGraph`, optionally TorchRL) and custom kernels (Warp/Taichi/Triton/CUDA C++) are hypotheses; the Phase 2 shootout picks one with bench evidence (C7). Hybrids (custom env kernels + a JAX/PyTorch policy) are valid. A candidate with no working SM 6.1 build is dropped and added to Rejected; no owner needed. | Measure, don't assume. | none yet (BACKLOG shootout items) |
 
-## 2026-11-14: owner answers to BRIEF §10 Q1, Q2, Q4, Q5
-- Q1: Stage 2 target is env-steps summed across all towns, ≥ 10^9/hour (~280k SPS), stretch.
-  Batched steps/hour stays as the secondary normalising metric; `BENCH_RESULT` gains an
-  optional `env_steps` field, reported as `env_steps_per_hour`.
-- Q2: `CORE_BUDGET` = 2500, `TOTAL_BUDGET` = 6000, raised only at phase gates by the owner.
-- Q4: Stage 1 is one population, P = 10,000 total.
-- Q5: ≤ 100 launches/10k stays provisional; a Phase 1 sweep (steps fused per launch vs
-  steps/hour) sets the C2 threshold.
+## Open design variables
+
+Decided by evidence here; all must avoid dynamic allocation.
+
+- Framework candidates (T10). JAX: env + policy + update can fuse into one XLA loop
+  (PureJaxRL-style); risk: XLA behaviour and shared-memory spills on Pascal as traffic branching
+  grows. PyTorch CUDA Graphs: graph replay has near-zero dispatch cost on WSL2; risk: graph
+  breaks on resets and neighbour lookups. Custom kernels: spatial hashing, raycasts and graph
+  kinematics map naturally to SIMT without padding; risk: autodiff and NN integration.
+- Topology: a 2D grid with spatial hashing vs a lane graph as fixed adjacency tensors.
+- Observation: kinematic feature vectors vs local occupancy grids (which must not need CNN
+  rendering in VRAM).
+- Learner: neuroevolution (GA/CMA-ES) vs PPO on the GPU.
+- Traffic environment sketch (Phase 3, written into BACKLOG when next): fixed tensors
+  `[envs, max_vehicles, state]` and `[envs, max_intersections, light_state]`; branchless IDM or
+  bicycle kinematics; intersection conflict resolution; auto-reset by masking. Gate: no
+  recompiles and no CPU fallbacks in the timed loop. Required: a batch-size sweep over towns N.
+- End-to-end RL sketch (Phase 4): an FP32 actor-critic MLP and a `scan`-style rollout fused with
+  the env; report SPS and episodes/hour. Gate: the Stage 2 targets with C1 to C3 passing.
+
+## Sweep results
+
+One table per sweep (overwritten on re-run) plus a one-line takeaway. None recorded yet.
+
+## Rejected
+
+- nsys (`--capture-range=cudaProfilerApi` + `nsys stats` CSV reports) as the bench gate: rejected because nsys records no CUDA data at all on WSL2 + GTX 1070, so every report was empty, 2026-11-14.
+- Hand-written SQL over the nsys `--export=sqlite` DB: rejected because `nsys stats` already computes the totals and SQL adds code volume, 2026-11-14.
+- The latest PyTorch wheel: rejected because it lacks sm_6x kernels ("no kernel image"), 2026-11-14.
+- CUDA 13 framework builds: rejected because CUDA 13 dropped Pascal, 2026-11-14.
+- Windows drivers newer than the R580 branch: rejected because they drop Pascal, 2026-11-14.

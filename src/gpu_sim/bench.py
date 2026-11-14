@@ -10,7 +10,7 @@ Workload contract (any framework):
      Stage 2 adds `"env_steps": E`: env-steps summed across all towns (steps x towns).
   3. Pack telemetry into one device buffer, so one readback = one device-to-host copy.
 
-Why CUPTI and not nsys: nsys records no CUDA data on WSL2 + Pascal (BRIEF D4).
+Why CUPTI and not nsys: nsys records no CUDA data on WSL2 + Pascal (DECISIONS.md, Rejected).
 Needs gcc and a CUDA 12.x toolkit with CUPTI (CUDA_HOME, default /usr/local/cuda).
 """
 
@@ -25,7 +25,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 VRAM_LIMIT_BYTES = 7.0e9  # BRIEF C3 (tests/test_bench.py asserts these equal the BRIEF)
-LAUNCHES_PER_10K_MAX = 100  # BRIEF C2: at most 1 host launch per 100 steps (proposed; Q5)
+LAUNCHES_PER_10K_MAX = 100  # BRIEF C2: at most 1 host launch per 100 steps (provisional; BACKLOG steps-fused sweep)
 TELEMETRY_INTERVAL = 100_000  # BRIEF C1: one host copy and one host sync per this many steps
 RESULT_PREFIX = "BENCH_RESULT "
 
@@ -50,7 +50,7 @@ class Report:
     host_memcpys: int
     launches: int
     host_syncs: int
-    env_steps: int = 0  # Stage 2 only: summed across towns (BRIEF §4)
+    env_steps: int = 0  # Stage 2 only: summed across towns (BRIEF Targets)
 
     @property
     def steps_per_hour(self) -> float:
