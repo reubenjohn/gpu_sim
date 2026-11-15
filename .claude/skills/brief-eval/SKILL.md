@@ -1,6 +1,7 @@
 ---
 name: brief-eval
 description: Check that the core docs (BRIEF, BACKLOG, backlog.yaml, DECISIONS, CLAUDE.md) still lead a context-free agent to the right decisions. Use after any change to those files, or when an agent made a wrong call the docs should have prevented.
+context: fork
 ---
 
 # brief-eval: probe the core docs with a context-free agent
@@ -39,3 +40,5 @@ The probes and their expected answers are in `evals/brief_probes.md`. This eval 
 5. If you edited docs, re-run the eval once with a new subagent.
 
 Note: subagents receive the CLAUDE.md snapshot from session start, so run this eval in a fresh session after editing CLAUDE.md.
+
+Forked: this skill runs in a forked context and returns only the verdict table. If the fork cannot spawn the brief-prober subagent, it must stop and report that (never answer the probes itself); then remove `context: fork` from the frontmatter.
