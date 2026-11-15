@@ -4,10 +4,14 @@ Workload contract (any framework):
   1. Wrap only the timed loop in cudaProfilerStart()/cudaProfilerStop(); the CUPTI counter
      (cucount.c, injected via CUDA_INJECTION64_PATH) counts only between those calls.
   2. Print one line `BENCH_RESULT {"steps": N, "seconds": S, "peak_vram_bytes": B}` to stdout.
-     steps: batched steps (Stage 1: generations). peak_vram_bytes: peak device memory *used*
+     steps: batched steps. A step is one batched step that advances every parallel env (or the
+     whole population) at once, and C1 and C2 count per batched step. Stage 1: steps = generations.
+     peak_vram_bytes: peak device memory *used*
      (NVML, incl. CUDA context and framework pools), not the framework's allocator counter.
      JAX workloads set XLA_PYTHON_CLIENT_PREALLOCATE=false.
-     Stage 2 adds `"env_steps": E`: env-steps summed across all towns (steps x towns).
+     Stage 2 adds `"env_steps": E`: env-steps summed across all N towns (batched steps x N), which
+     the report turns into env_steps_per_hour, the Stage 2 target metric; batched steps/hour
+     stays a secondary, normalising metric. This docstring is the step definition's single home.
   3. Pack telemetry into one device buffer, so one readback = one device-to-host copy.
 
 Why CUPTI and not nsys: nsys records no CUDA data on WSL2 + Pascal (DECISIONS.md, Rejected).
