@@ -107,7 +107,7 @@ each gate's population size and run length are in its BACKLOG gate. Latest value
 | Measure | Baseline | Target | Gate |
 |---|---|---|---|
 | Stage 1 throughput: generations/hour | Stage 1 CPU reference | ≥ 10^6 (~280 gen/s) (owner) | the Stage 1 gate |
-| Stage 2 throughput: env-steps/hour summed across all towns | Stage 2 CPU reference | 10^9 (~280k SPS): ASPIRATIONAL (owner, 2026-11-14); best measured value in DECISIONS | the Stage 2 gate is a speedup over this baseline with C1 to C3 passing |
+| Stage 2 throughput: env-steps/hour summed across all towns | Stage 2 CPU reference | 10^9 (~280k SPS): ASPIRATIONAL (owner, 2026-11-14); best measured value in DECISIONS | the Stage 2 gate is a speedup over this baseline (median of 3 above 1× by more than its spread, P1) with C1 to C3 passing |
 | C1 to C3 | as above | as above | every `gpu-sim bench` run |
 | Unit tests + lint | n/a | green, local and CI | every commit |
 
