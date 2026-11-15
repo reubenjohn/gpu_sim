@@ -34,8 +34,8 @@ Only the orchestrating agent edits BACKLOG.md; subagents report items upward.
 
 1. **No dynamic shapes.** Never use `tensor[mask]`, growing lists, or host-side `if` on tensor
    values inside the step loop. Use fixed padded tensors and `where(cond, new, old)`.
-2. **FP32 and integers only.** Never enable float16/bfloat16 or autocast; Pascal FP16 runs at
-   1:64. Use fp32 for kinematics and weights, int32/int16/int8/uint8 for indices and discrete states.
+2. **FP32 and integers only.** Never enable float16/bfloat16 or autocast (why: BRIEF C5).
+   Use fp32 for kinematics and weights, int32/int16/int8/uint8 for indices and discrete states.
 3. **No host round-trips.** No host↔device copies or host syncs in the timed loop beyond one packed telemetry readback per
    10^5 steps. Fuse thousands of steps into one XLA loop, CUDA Graph or megakernel, because
    each kernel launch is expensive under WSL2.
@@ -49,10 +49,11 @@ Only the orchestrating agent edits BACKLOG.md; subagents report items upward.
 `tests/test_code_volume.py` caps AST nodes: `CORE_BUDGET` for `src/gpu_sim/`, and a much
 larger `TOTAL_BUDGET` for all project Python, tests included. Names, comments, docstrings, type
 hints and imports are free. The count is only a proxy for complexity, so never golf it with
-packed one-liners, cryptic names or dense tricks. When it binds:
-- simplify, or reuse a library or the tool's own reports instead of hand-rolling. For example,
-  use CUPTI callbacks rather than hand-parsing profiler databases.
-- or ask the owner at the start of a session to raise the budget. Never raise it yourself.
+packed one-liners, cryptic names or dense tricks. The budget is backpressure, so when it binds:
+- find a more elegant solution: simplify, or reuse a library or the tool's own reports instead
+  of hand-rolling. For example, use CUPTI callbacks rather than hand-parsing profiler databases.
+- or push back on the requirement driving it, at the start of a session (BRIEF "Push back
+  early"). Don't ask for more budget to fit an inelegant path. Never change it yourself.
 The budget is what lets agents work without the owner: under it, follow the BRIEF autonomy boundary.
 
 ## Conventions

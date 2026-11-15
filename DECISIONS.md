@@ -4,11 +4,13 @@ The current technical decisions, with their evidence. Goals, constraints and own
 principles are in [docs/BRIEF.md](docs/BRIEF.md); work is in [docs/BACKLOG.md](docs/BACKLOG.md).
 
 Rules:
+0. Every decision follows from the BRIEF (a constraint, requirement or target) plus evidence
+   judged against its baseline (BRIEF Evidence principle). Its "why" names which.
 1. This file holds only CURRENT decisions: ID | decision | why (one line) | evidence (latest
    numbers + date, or a link to a committed results file). It is not dated log entries.
 2. When a decision changes, edit it in place. Delete superseded decisions; git history keeps them.
 3. Sweep results: one small table per sweep, overwritten when re-run, plus a one-line takeaway,
-   for the current framework(s) only (BRIEF Sweeps); delete tables for rejected frameworks.
+   for the current framework(s) only (sweep list: BACKLOG preamble); delete tables for rejected frameworks.
 4. Rejected options get a short "Rejected" list, one line each ("X: rejected because Y, date"),
    so agents don't retry them. That is the only history kept visible. Cap: 10 lines; merge or
    drop the oldest, least relevant lines to stay under it.
@@ -20,7 +22,8 @@ Rules:
 
 Before proposing a framework or layout change, record its `gpu-sim bench` numbers (median of 3)
 as the evidence for that decision here (BRIEF C7). Evidence format:
-`steps_per_hour | host_memcpys | host_syncs | launches_per_10k | peak_vram_bytes`, plus commit and workload.
+`steps_per_hour | speedup vs CPU reference | host_memcpys | host_syncs | launches_per_10k | peak_vram_bytes`,
+plus commit and workload. Each claim names its baseline (BRIEF Evidence principle).
 
 ## Settled technical decisions
 
@@ -33,15 +36,16 @@ as the evidence for that decision here (BRIEF C7). Evidence format:
 | T5 | **Owner-gated.** CUDA 12.x only: GPU frameworks must ship CUDA 12.x builds with SM 6.1 kernels; check before adopting any wheel. | CUDA 13 dropped Pascal. | see Rejected |
 | T6 | **Owner-gated.** PyTorch is pinned to `torch==2.7.1` from the cu126 index. | The latest wheel lacks sm_6x kernels ("no kernel image"). | 2026-11-14 probe (T1) |
 | T7 | **Owner-gated.** No driver past R580: keep the Windows driver on the R580 branch (installed: 581.29). | R580 is the last branch supporting Pascal. | `nvidia-smi` |
-| T8 | GitHub CI is CPU-only (ruff, pytest, code volume); `@pytest.mark.gpu` tests skip without the GPU, nvcc or gcc. | No GPU runners at $0 (BRIEF principle). | `.github/workflows/ci.yml` |
+| T8 | GitHub CI is CPU-only (ruff, pytest, code volume); `@pytest.mark.gpu` tests skip without the GPU, nvcc or gcc. | No GPU runners at $0 (BRIEF C4, Money budget). | `.github/workflows/ci.yml` |
 | T9 | C6 recompiles are counted with `jax.log_compiles` or the `torch._dynamo` recompile counter inside the timed loop. | The frameworks already expose them. | none yet |
-| T10 | **The framework is NOT settled.** JAX (`jit` + `vmap` + `lax.scan`), PyTorch (`torch.compile` + `torch.cuda.CUDAGraph`, optionally TorchRL) and custom kernels (Warp/Taichi/Triton/CUDA C++) are hypotheses; the Phase 2 shootout picks one with bench evidence (C7). Hybrids (custom env kernels + a JAX/PyTorch policy) are valid. A candidate with no working SM 6.1 build is dropped and added to Rejected; no owner needed. | Measure, don't assume. | none yet (BACKLOG shootout items) |
+| T10 | **The framework is NOT settled.** JAX (`jit` + `vmap` + `lax.scan`), PyTorch (`torch.compile` + `torch.cuda.CUDAGraph`, optionally TorchRL) and custom kernels (Warp/Taichi/Triton/CUDA C++) are hypotheses; the Phase 2 shootout picks the fastest candidate that matches the CPU reference and beats the no-selection control, with bench evidence (C7). Hybrids (custom env kernels + a JAX/PyTorch policy) are valid. A candidate with no working SM 6.1 build is dropped and added to Rejected; no owner needed. | Measure, don't assume. | none yet (BACKLOG shootout items) |
 
 ## Current measurements
 
 | Measure | Value | Date | Command |
 |---|---|---|---|
 | Probe counts (raw CUDA `tests/fixtures/probe.cu`) | 1000 launches, 3 H2D, 2 D2H, 4 syncs | 2026-11-14 | `uv run pytest -q -m gpu` |
+| Stage 1 CPU reference generations/hour (baseline) | none yet (B12) | | B12's pytest / script |
 | Stage 1 generations/hour | none yet | | `uv run gpu-sim bench -- <stage-1 workload>` |
 
 ## Open technical questions
