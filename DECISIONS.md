@@ -14,7 +14,7 @@ Rules:
 4. Rejected options get a short "Rejected" list, one line each ("X: rejected because Y, date"),
    so agents don't retry them. That is the only history kept visible. Cap: 10 lines; merge or
    drop the oldest, least relevant lines to stay under it.
-5. Known gaps or debt belong in BACKLOG.md, not here.
+5. Known gaps or debt belong in the backlog (docs/backlog.yaml), not here.
 6. **Owner-gated** decisions (marked below: the hardware and toolchain pins) change only with the
    owner, because a wrong change can break the machine or the toolchain. Agents may edit every
    other decision when they have the evidence.

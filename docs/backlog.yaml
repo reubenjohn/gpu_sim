@@ -1,0 +1,146 @@
+# Rules and gate sequence: docs/BACKLOG.md. Schema: docs/backlog.schema.json.
+# Order is priority: pick the first active item whose blocked_by items are all gone.
+items:
+  - id: B1
+    item: >-
+      Gate B1: Stage 1 ≥ 10^6 gen/hour (P = 10,000, one population), correct and learning, with C1 to C3 passing
+    serves: Stage 1 throughput target (BRIEF Targets); the Phase 2 framework shootout
+    done_when: >-
+      `uv run gpu-sim bench -- <stage-1 workload>` exits 0 on the GTX 1070 at P = 10,000 with a median of 3 runs
+      ≥ 10^6 generations/hour over a 10^5–10^6-generation run; that workload matches the CPU reference (B12) and
+      beats the no-selection control (B13); DECISIONS.md records the shootout winner with that evidence and its
+      speedup over the CPU reference. The winner is the fastest candidate that matches the reference and beats the
+      control (rejected candidates need not finish); and the owner has re-reviewed the BRIEF, after which the Phase 3
+      gate is written here. The batch-size sweep (B10) is informational for Stage 1 and sets the town count N for
+      Stage 2.
+    blocked_by: [B12, B13]
+    size: L
+    status: active
+  - id: B15
+    item: >-
+      Investigate intermittent probe-test compile failure: a reviewer saw nvcc 12.9 fail on
+      `tests/fixtures/probe.cu` with glibc 2.43 `sinpif`/`rsqrtf` noexcept mismatches, while the same test passes
+      in the main session. The header patch from `~/.home/setup/cuda.sh` is applied (sha 16b0d2fa…); check whether
+      a different CUDA_HOME/include path or env causes it
+    serves: unblocks B1
+    done_when: the cause is found and the test passes in a fresh session, or the required env is documented in CLAUDE.md
+    blocked_by: []
+    size: S
+    status: active
+  - id: B2
+    item: Trivial fused workload (Phase 1 done-criterion; the probe fails C1/C2 by design)
+    serves: unblocks B5–B9
+    done_when: "`gpu-sim bench -- <trivial workload>` exits 0 on the GTX 1070, and a `@pytest.mark.gpu` test runs it"
+    blocked_by: []
+    size: S
+    status: active
+  - id: B12
+    item: >-
+      Stage 1 CPU reference: a small NumPy implementation of beak vs flower co-evolution with a trait-match metric.
+      It is the correctness oracle, the speed baseline and the spec B7–B9 implement
+    serves: unblocks B7–B9, B13
+    done_when: >-
+      a pytest runs it on fixed seeds; DECISIONS Current measurements records its gen/hour (median of 3) at
+      P = 10,000
+    blocked_by: []
+    size: M
+    status: active
+  - id: B13
+    item: "Stage 1 no-selection control: trait-match metric over generations, selection vs no selection, on the CPU reference"
+    serves: P1 validity (Stage 1 learning); unblocks B1
+    done_when: >-
+      DECISIONS records both curves on ≥ 3 fixed seeds; selection beats the control by more than the spread across
+      seeds
+    blocked_by: [B12]
+    size: S
+    status: active
+  - id: B3
+    item: Count `cuMemcpy2D*` / `cuMemcpy3D*` (and their async/peer variants) as host copies when host-side
+    serves: C1 (invariant)
+    done_when: a unit test classifies those names; DECISIONS T2 updated
+    blocked_by: []
+    size: S
+    status: active
+  - id: B4
+    item: >-
+      JAX `host_syncs` gap: XLA waits through `cuEventRecord` / `cuLaunchHostFunc` / `cuStreamWaitEvent`, not
+      `cu*Synchronize`, so `host_syncs` reads 0 (D2H readbacks are still counted)
+    serves: C1 (invariant); unblocks B7
+    done_when: bench counts JAX host waits, or DECISIONS records why the D2H count suffices, with a test either way
+    blocked_by: []
+    size: M
+    status: active
+  - id: B5
+    item: "Steps-fused-per-launch sweep: steps per launch vs steps/hour, also compile time and VRAM; re-run per framework"
+    serves: C2 (invariant)
+    done_when: >-
+      DECISIONS sweep table + takeaway; C2's (measured) threshold confirmed or changed in both BRIEF C2 and
+      `bench.LAUNCHES_PER_10K_MAX` (BRIEF P2)
+    blocked_by: [B2]
+    size: M
+    status: active
+  - id: B6
+    item: "Counter overhead: the same workload's steps/hour with and without `gpu-sim bench` (expected ≈ 0)"
+    serves: Stage 1 throughput (req 2)
+    done_when: DECISIONS records both medians of 3; the difference is inside the noise band, or the bias is noted
+    blocked_by: [B2]
+    size: S
+    status: active
+  - id: B7
+    item: >-
+      Stage 1 in JAX: vectorised beak vs flower co-evolution, P = 10,000, 10^5–10^6 generations back to back in
+      VRAM. Measure `launches_per_10k` early (an XLA loop may launch per iteration unless command buffers are on)
+    serves: Stage 1 throughput (req 2)
+    done_when: >-
+      a pytest matches the B12 reference on fixed seeds within a stated tolerance and reproduces B13's
+      selection-beats-control result; bench median of 3 and speedup over B12 recorded in DECISIONS (T10 evidence);
+      or dropped to Rejected with failed SM 6.1 check
+    blocked_by: [B2, B4, B12]
+    size: M
+    status: active
+  - id: B8
+    item: Stage 1 in PyTorch with CUDA Graphs (torch pin T6)
+    serves: Stage 1 throughput (req 2)
+    done_when: as B7
+    blocked_by: [B2, B12]
+    size: M
+    status: active
+  - id: B9
+    item: >-
+      Stage 1 in one custom-kernel backend (Warp/Taichi/Triton/CUDA); no SM 6.1 build means drop it; Warp, Taichi
+      and Triton are uv dependencies, not new toolchains; only raw CUDA C++ (a new language) needs the owner first
+      (BRIEF P4)
+    serves: Stage 1 throughput (req 2)
+    done_when: as B7
+    blocked_by: [B2, B12]
+    size: L
+    status: active
+  - id: B10
+    item: >-
+      Batch-size sweep (population P) per candidate: find the peak and where it falls off; check C3 at the peak.
+      Informational for Stage 1 (the gate stays at P = 10,000); it sets N for Stage 2
+    serves: Stage 1 throughput (req 2)
+    done_when: DECISIONS sweep table + takeaway per candidate
+    blocked_by: [B7, B8, B9]
+    size: M
+    status: active
+  - id: B11
+    item: >-
+      Once-per-framework sweeps for each surviving candidate: telemetry interval (10^5 to 10^6; C1 forbids shorter),
+      memory layout AoS vs SoA (often 2–5× on Pascal), integer width int32/int16/int8 (narrower saves bandwidth;
+      some ops are slower), threads per block (custom kernels only)
+    serves: Stage 1 throughput (req 2)
+    done_when: DECISIONS has each sweep's table + takeaway
+    blocked_by: [B7, B8, B9]
+    size: M
+    status: active
+  - id: B16
+    item: >-
+      Showcase visuals: one generic, small way to render both stages with no overhead on benchmarked runs (idea:
+      re-run a short seeded slice outside the bench, emit fixed-shape 2D point frames, animate with matplotlib in
+      `scripts/`)
+    serves: Goal (showcase); BRIEF Non-goals
+    done_when: a design is agreed with the owner, then one Stage 1 animation is produced by a committed script
+    blocked_by: []
+    size: M
+    status: parked

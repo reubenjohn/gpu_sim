@@ -25,5 +25,5 @@ The `bench` workload contract is in the docstring of `src/gpu_sim/bench.py`.
 ## Docs
 
 - [docs/BRIEF.md](docs/BRIEF.md): goal, principles (incl. the autonomy boundary), constraints, targets (owner-maintained)
-- [docs/BACKLOG.md](docs/BACKLOG.md): prioritised work, next gate first
+- [docs/BACKLOG.md](docs/BACKLOG.md): backlog rules; the prioritised items, next gate first, are in [docs/backlog.yaml](docs/backlog.yaml)
 - [DECISIONS.md](DECISIONS.md): current technical decisions, evidence, sweeps and rejected options

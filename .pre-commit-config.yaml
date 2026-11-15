@@ -1,0 +1,55 @@
+# Read by prek (`uv run prek install` once per clone; `uv run prek run --all-files` = CI).
+repos:
+  - repo: https://github.com/lycheeverse/lychee
+    rev: lychee-v0.24.2
+    hooks:
+      - id: lychee  # downloads its own pinned binary into the hook cache; no system install
+        args: ["--offline", "--no-progress"]
+        types: [markdown]
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: "0.39.0"
+    hooks:
+      - id: check-jsonschema
+        name: backlog.yaml matches backlog.schema.json
+        files: ^docs/backlog\.(yaml|schema\.json)$
+        args: ["--schemafile", "docs/backlog.schema.json", "docs/backlog.yaml"]
+        pass_filenames: false
+
+  # Local hooks use the tools pinned in uv.lock. Size caps are in bytes (stricter than chars).
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+      - id: cap-brief
+        name: docs/BRIEF.md ≤ 9500 bytes
+        entry: sh -c 'test $(wc -c < docs/BRIEF.md) -le 9500'
+        language: system
+        files: ^docs/BRIEF\.md$
+        pass_filenames: false
+      - id: cap-claude
+        name: CLAUDE.md ≤ 6000 bytes
+        entry: sh -c 'test $(wc -c < CLAUDE.md) -le 6000'
+        language: system
+        files: ^CLAUDE\.md$
+        pass_filenames: false
+      - id: cap-decisions
+        name: DECISIONS.md ≤ 9000 bytes
+        entry: sh -c 'test $(wc -c < DECISIONS.md) -le 9000'
+        language: system
+        files: ^DECISIONS\.md$
+        pass_filenames: false
+      - id: cap-backlog
+        name: docs/backlog.yaml ≤ 12000 bytes
+        entry: sh -c 'test $(wc -c < docs/backlog.yaml) -le 12000'
+        language: system
+        files: ^docs/backlog\.yaml$
+        pass_filenames: false

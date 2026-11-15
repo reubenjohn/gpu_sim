@@ -7,17 +7,20 @@ A 100% GPU-resident simulation and RL engine for a local GTX 1070 (Pascal SM 6.1
 1. [docs/BRIEF.md](docs/BRIEF.md) is the north star: constraints, ranked requirements, targets,
    budgets, principles P1 to P5 (P5 is the autonomy boundary) and open owner questions. Decide from it. Put anything you
    cannot decide in its "Open owner questions" rather than guessing.
-2. [docs/BACKLOG.md](docs/BACKLOG.md): pick the top unblocked item.
+2. [docs/BACKLOG.md](docs/BACKLOG.md) (rules) and [docs/backlog.yaml](docs/backlog.yaml) (items): pick the top unblocked item.
 3. [DECISIONS.md](DECISIONS.md): current technical decisions with their evidence, sweep results
    and rejected options.
 
-Only the orchestrating agent edits BACKLOG.md; subagents report items upward.
+Only the orchestrating agent edits the backlog; subagents report items upward.
 
 ## Commands (uv only: never pip or system python)
 
-- `uv sync`: install. `uv add <pkg>` / `uv add --dev <pkg>`: add a dependency.
+- `uv sync`, then once per clone `uv run prek install`: install deps and the pre-commit hooks. `uv add <pkg>` / `uv add --dev <pkg>`: add a dependency.
 - `uv run pytest -q`: unit tests, including the code-volume gate. `@pytest.mark.gpu` tests skip without the GPU, nvcc or gcc.
-- `uv run ruff check . && uv run ruff format --check .`: lint and format (line length 120, C901 max complexity 10).
+- `uv run prek run --all-files`: every hook in `.pre-commit-config.yaml` (ruff lint and format, lychee
+  offline links, backlog schema, doc size caps), as CI runs it. Ruff: line length 120, C901 max 10.
+- After editing BRIEF, BACKLOG, backlog.yaml, DECISIONS or CLAUDE.md, run the `brief-eval` skill
+  (`.claude/skills/brief-eval/SKILL.md`; probes in `evals/brief_probes.md`).
 - `uv run python scripts/code_volume.py`: per-file AST-node table against the budgets.
 - `uv run gpu-sim bench [--keep DIR] -- <workload cmd>`: count a workload's CUDA driver calls with CUPTI and gate
   it on C1 to C3. The workload contract (cudaProfilerStart/Stop around the timed loop, plus a
@@ -28,7 +31,7 @@ Only the orchestrating agent edits BACKLOG.md; subagents report items upward.
 
 - `src/gpu_sim/`: core package. It counts toward `CORE_BUDGET`. `bench.py` is the Phase 1 harness.
 - `scripts/`: dev tooling. `tests/`: pytest. Both count toward `TOTAL_BUDGET` only.
-- `.github/workflows/ci.yml`: CPU-only CI (ruff, pytest). GPU gates run locally only.
+- `.github/workflows/ci.yml`: CPU-only CI (prek hooks, pytest). GPU gates run locally only.
 
 ## Step-loop rules (hard constraints C1, C2, C5, C6; see BRIEF "Hard constraints")
 

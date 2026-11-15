@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gpu_sim backlog (docs/backlog.yaml)",
+  "description": "Id uniqueness, the active/parked caps and cross-references are checked in tests/test_docs.py.",
+  "type": "object",
+  "required": ["items"],
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["id", "item", "serves", "done_when", "blocked_by", "size", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^B[0-9]+$"},
+          "item": {"type": "string", "minLength": 1},
+          "serves": {"type": "string", "minLength": 1},
+          "done_when": {"type": "string", "minLength": 1},
+          "blocked_by": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^B[0-9]+$"}},
+          "size": {"enum": ["S", "M", "L"]},
+          "status": {"enum": ["active", "parked"]}
+        }
+      }
+    }
+  }
+}
