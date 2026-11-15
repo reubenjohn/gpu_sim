@@ -5,7 +5,7 @@ principles are in [docs/BRIEF.md](docs/BRIEF.md); work is in [docs/BACKLOG.md](d
 
 Rules:
 0. Every decision follows from the BRIEF (a constraint, requirement or target) plus evidence
-   judged against its baseline (BRIEF Evidence principle). Its "why" names which.
+   judged against its baseline (BRIEF P1 Baseline). Its "why" names which.
 1. This file holds only CURRENT decisions: ID | decision | why (one line) | evidence (latest
    numbers + date, or a link to a committed results file). It is not dated log entries.
 2. When a decision changes, edit it in place. Delete superseded decisions; git history keeps them.
@@ -21,9 +21,9 @@ Rules:
 7. Current measurements: overwrite each row in place with the latest value.
 
 Before proposing a framework or layout change, record its `gpu-sim bench` numbers (median of 3)
-as the evidence for that decision here (BRIEF C7). Evidence format:
+as the evidence for that decision here (BRIEF P1). Evidence format:
 `steps_per_hour | speedup vs CPU reference | host_memcpys | host_syncs | launches_per_10k | peak_vram_bytes`,
-plus commit and workload. Each claim names its baseline (BRIEF Evidence principle).
+plus commit and workload. Each claim names its baseline (BRIEF P1; per-stage baselines in T13).
 
 ## Settled technical decisions
 
@@ -38,7 +38,10 @@ plus commit and workload. Each claim names its baseline (BRIEF Evidence principl
 | T7 | **Owner-gated.** No driver past R580: keep the Windows driver on the R580 branch (installed: 581.29). | R580 is the last branch supporting Pascal. | `nvidia-smi` |
 | T8 | GitHub CI is CPU-only (ruff, pytest, code volume); `@pytest.mark.gpu` tests skip without the GPU, nvcc or gcc. | No GPU runners at $0 (BRIEF C4, Money budget). | `.github/workflows/ci.yml` |
 | T9 | C6 recompiles are counted with `jax.log_compiles` or the `torch._dynamo` recompile counter inside the timed loop. | The frameworks already expose them. | none yet |
-| T10 | **The framework is NOT settled.** JAX (`jit` + `vmap` + `lax.scan`), PyTorch (`torch.compile` + `torch.cuda.CUDAGraph`, optionally TorchRL) and custom kernels (Warp/Taichi/Triton/CUDA C++) are hypotheses; the Phase 2 shootout picks the fastest candidate that matches the CPU reference and beats the no-selection control, with bench evidence (C7). Hybrids (custom env kernels + a JAX/PyTorch policy) are valid. A candidate with no working SM 6.1 build is dropped and added to Rejected; no owner needed. | Measure, don't assume. | none yet (BACKLOG shootout items) |
+| T10 | **The framework is NOT settled.** JAX (`jit` + `vmap` + `lax.scan`), PyTorch (`torch.compile` + `torch.cuda.CUDAGraph`, optionally TorchRL) and custom kernels (Warp/Taichi/Triton/CUDA C++) are hypotheses; the Phase 2 shootout picks the fastest candidate that matches the CPU reference and beats the no-selection control, with bench evidence (BRIEF P1). Hybrids (custom env kernels + a JAX/PyTorch policy) are valid. A candidate with no working SM 6.1 build is dropped and added to Rejected; no owner needed. | Measure, don't assume. | none yet (BACKLOG shootout items) |
+| T11 | **Owner-gated.** Target hardware: NVIDIA GTX 1070 (Pascal SM 6.1, 8 GB, 1920 CUDA cores, ~256 GB/s) on WSL2, $0 cloud. | BRIEF C4: owner hardware and cost. | `nvidia-smi --query-gpu=name,compute_cap --format=csv` |
+| T12 | FP32 and integers only (BRIEF C5). | FP16 math runs 64× slower than FP32 on this card. | Nvidia's GP104 spec, not measured here; `tests/test_constraints.py` |
+| T13 | Per-stage P1 baselines. Correct and Fast: a NumPy CPU reference per stage (Stage 1: B12). Learns: Stage 1 no-selection control (B13); Stage 2 a random policy, then a fixed-timer traffic light. Instrument: the known-answer `tests/fixtures/probe.cu` (T1), and the same workload with and without the counter (B6). | BRIEF P1. | T1; BACKLOG B6, B12, B13 |
 
 ## Current measurements
 
