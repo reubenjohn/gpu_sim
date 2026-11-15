@@ -27,7 +27,7 @@ The probes and their expected answers are in `evals/brief_probes.md`. This eval 
    - For each situation, answer: what you do, whether the owner is needed, and the exact doc line
      that decides it (quoted). If the docs are silent or conflict, say so instead of guessing.
    - The question list from step 1.
-3. Grade in a second fresh `general-purpose` subagent (not in the main session, and not a fork: forks cannot spawn subagents, tested 2026-11-15). Give it the prober's answers verbatim and tell it to read `evals/brief_probes.md`. It returns only the step-4 table, so the expected answers and the grading stay out of the main context. Grading rules:
+3. Grade in a second fresh `general-purpose` subagent (not in the main session, and not a fork: Agent-tool forks may not spawn subagents; a `context: fork` skill is untested). Give it the prober's answers verbatim and tell it to read `evals/brief_probes.md`. It returns only the step-4 table, so the expected answers and the grading stay out of the main context. Grading rules:
    - **match:** same action and same owner/no-owner call;
    - **mismatch:** a different action or owner call;
    - **ambiguous:** right answer from a different or weaker line, or the agent flagged silence or a
