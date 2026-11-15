@@ -11,14 +11,16 @@ The probes and their expected answers are in `evals/brief_probes.md`. This eval 
 
 - After any edit to `docs/BRIEF.md`, `docs/BACKLOG.md`, `docs/backlog.yaml`, `DECISIONS.md` or
   `CLAUDE.md`, before committing.
-- When a real agent mistake surfaces: first add it as a new probe (situation, expected answer,
+- Probes come from real events: each notes the session or commit it came from, and invented
+  probes get replaced as real ones arrive. When a real agent mistake or hard call surfaces, first add it as a new probe (situation, expected answer,
   deciding line), then run the eval.
 
 ## Steps
 
 1. Read `evals/brief_probes.md`. Build a question list with only each probe's title and situation.
    Never pass the expected answers or deciding lines on.
-2. Spawn one fresh, context-free subagent (Agent tool, `general-purpose`; not a fork, which would
+2. Spawn one fresh `brief-prober` subagent (`.claude/agents/brief-prober.md`: Read-only tools; fall back to
+   `general-purpose` if it is not loaded yet). Not a fork, which would
    inherit your context). Its prompt:
    - Read only these files in the repo: `docs/BRIEF.md`, `docs/BACKLOG.md`, `docs/backlog.yaml`,
      `DECISIONS.md`, `CLAUDE.md`. No other files, no code, no git history.
@@ -35,3 +37,5 @@ The probes and their expected answers are in `evals/brief_probes.md`. This eval 
    docs are right and the expectation is stale, a probe edit. Owner-gated text (BRIEF goal,
    principles, (owner) numbers) gets an Open owner question, not an edit.
 5. If you edited docs, re-run the eval once with a new subagent.
+
+Note: subagents receive the CLAUDE.md snapshot from session start, so run this eval in a fresh session after editing CLAUDE.md.

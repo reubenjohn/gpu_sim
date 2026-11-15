@@ -32,7 +32,7 @@ trade off only among valid results. It generates:
 | Fast | that same CPU reference, and the previous best median in DECISIONS | speedup and steps/hour are reported against both; only a workload that is Correct counts |
 | Learns | a null control, then a simple per-stage heuristic | it beats each by more than the spread across fixed seeds |
 | Instrument is right | a known-answer workload, and the same run without the instrument | counts are exact and overhead is inside the noise band |
-| Change is real | the baseline's own repeated runs | the median of 3 moves by more than their spread (floor ±5%, proposed) |
+| Change is real | the baseline's own repeated runs | the median of 3 moves by more than their spread (floor ±5%, owner 2026-11-15) |
 
 Pivots: before proposing a framework or memory-layout change, record its `gpu-sim bench` numbers
 (median of 3) in DECISIONS as that decision's evidence. The per-stage baselines are in DECISIONS.
@@ -107,7 +107,7 @@ each gate's population size and run length are in its BACKLOG gate. Latest value
 | Measure | Baseline | Target | Gate |
 |---|---|---|---|
 | Stage 1 throughput: generations/hour | Stage 1 CPU reference | ≥ 10^6 (~280 gen/s) (owner) | the Stage 1 gate |
-| Stage 2 throughput: env-steps/hour summed across all towns | Stage 2 CPU reference | 10^9 (~280k SPS): ASPIRATIONAL (owner, 2026-11-14); best measured value in DECISIONS | the Stage 2 gate is a speedup over this baseline (median of 3 above 1× by more than its spread, P1) with C1 to C3 passing |
+| Stage 2 throughput: env-steps/hour summed across all towns | Stage 2 CPU reference | 10^9 (~280k SPS): ASPIRATIONAL (owner, 2026-11-14); best measured value in DECISIONS | the Stage 2 gate is a speedup over this baseline (median of 3 above 1× by more than its spread, P1) with C1 to C3 passing and learning beating its baselines (P1) |
 | C1 to C3 | as above | as above (owner and measured, per row) | every `gpu-sim bench` run |
 | Unit tests + lint | n/a | green, local and CI (owner) | every commit |
 
@@ -119,7 +119,7 @@ each gate's population size and run length are in its BACKLOG gate. Latest value
   changes it.
 - **Money (owner):** $0. No cloud GPUs and no paid services. Any spend needs the owner.
 - **Time (owner):** unit suite < 30 s on CPU; CI (CPU only) < 5 min; a gate `bench` run ≤ 10 min
-  wall (proposed).
+  wall (owner, 2026-11-15).
 
 ## Settled decisions
 
@@ -139,8 +139,6 @@ The hard constraints are settled. Technical decisions, including the owner-gated
 
 Agents add questions here instead of guessing.
 
-- Q6. Confirm the "(proposed)" items: the ±5% noise-band floor and the 10-minute gate bench run.
-
 ## Freshness
 
-Last reviewed 2026-11-14 by the owner. Re-review at each phase gate.
+Last reviewed 2026-11-15 by the owner. Re-review at each phase gate.

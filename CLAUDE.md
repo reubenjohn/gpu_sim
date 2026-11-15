@@ -66,3 +66,4 @@ The budget is what lets agents work without the owner: under it, follow the BRIE
 - Promote any shell pipeline or inline script you would reuse to `scripts/` or a test.
 - The other ~1 GB of VRAM belongs to WSL2/OS (C3: peak < 7.0 GB).
 - Toolchain setup (CUDA toolkit) needs `sudo` and is done by the owner. Ask; never run it yourself.
+- Outside this repo (dotfiles such as ~/.home, shell rc files, credentials, GitHub auth scopes or repo settings): git here cannot undo it, so ask the owner (BRIEF P5). Never work around a rejected push or permission.
